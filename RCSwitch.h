@@ -60,11 +60,42 @@
 // We can handle up to (unsigned long) => 32 bit * 2 H/L changes per bit + 2 for sync
 #define RCSWITCH_MAX_CHANGES 67
 
+// Ignore glitches - ignore pulses less than this length in microseconds
+#define RCSWITCH_MIN_DURATION 150
+
+// Target pulse length
+#define RCSWITCH_PULSE_LENGTH 300
+
+// Pulse length sensitivity
+#define RCSWITCH_PULSE_SENSITIVITY 25
+
 class RCSwitch {
 
   public:
     RCSwitch();
     
+    // RFM69
+
+    static volatile int RSSI; //most accurate RSSI during reception (closest to the reception)
+    static RCSwitch* selfPointer;
+
+    bool initialize(); 
+    void setFixedThreshold(uint8_t threshold);
+    void setFrequencyMHz(float f);
+    void setFrequency(uint32_t freqHz);
+    void receiveBegin();
+    void receiveEnd();
+    void setMode(byte newMode);
+    byte readReg(byte addr);
+    void writeReg(byte addr, byte value);
+    void select();
+    void unselect();
+    void setHighPower(bool onOff);
+    void setHighPowerRegs(bool onOff);
+    int8_t readRSSI(bool forceTrigger); 
+
+    // RCSwitch
+
     void switchOn(int nGroupNumber, int nSwitchNumber);
     void switchOff(int nGroupNumber, int nSwitchNumber);
     void switchOn(const char* sGroup, int nSwitchNumber);
@@ -148,6 +179,17 @@ class RCSwitch {
     void setProtocol(int nProtocol);
     void setProtocol(int nProtocol, int nPulseLength);
 
+  protected: // RFM69
+    static volatile byte _mode; //should be protected?
+
+    byte _slaveSelectPin;
+    byte _interruptPin;
+    byte _interruptNum;
+    byte _powerLevel;
+    bool _isRFM69HW;
+    byte _SPCR;
+    byte _SPSR; 
+
   private:
     char* getCodeWordA(const char* sGroup, const char* sDevice, bool bStatus);
     char* getCodeWordB(int nGroupNumber, int nSwitchNumber, bool bStatus);
@@ -157,8 +199,11 @@ class RCSwitch {
 
     #if not defined( RCSwitchDisableReceiving )
     static void handleInterrupt();
+    void interruptSetup(); 
+    static void handleTimer();
+    static hw_timer_t * timer; // timer
     static bool receiveProtocol(const int p, unsigned int changeCount);
-    int nReceiverInterrupt;
+    int nReceiverInterruptPin;
     #endif
     int nTransmitterPin;
     int nRepeatTransmit;
@@ -175,7 +220,7 @@ class RCSwitch {
     /* 
      * timings[0] contains sync timing, followed by a number of bits
      */
-    static unsigned int timings[RCSWITCH_MAX_CHANGES];
+    static uint32_t timings[RCSWITCH_MAX_CHANGES];
     #endif
 
     

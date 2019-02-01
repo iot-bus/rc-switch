@@ -1,4 +1,11 @@
 # rc-switch
+
+This fork of rc-switch enables the Hope RFM69 modules to be used to control and sense the cheap 433Mhz modules widely available.
+It incorporate a modified version of Kobuki's RFM96OOK OOK library which itself is a version of LowPowerLabs. Kudos to the developers involved.
+This version has also been created to make it very simple to use the new IoT-Bus 433Mhz/915MHz boards with OOK and decoding/encoding many of the most common device protocols courtesy of the original rc-switch.
+
+The original rc-switch library information is below:
+
 [![Build Status](https://travis-ci.org/sui77/rc-switch.svg?branch=master)](https://travis-ci.org/sui77/rc-switch)
 
 Use your Arduino or Raspberry Pi to operate remote radio controlled devices
@@ -39,3 +46,7 @@ hand set.
 
 For the Raspberry Pi, clone the https://github.com/ninjablocks/433Utils project to
 compile a sniffer tool and transmission commands.
+
+Kobuki's RFM96OOK library is available here:
+
+https://github.com/kobuki/RFM69OOK

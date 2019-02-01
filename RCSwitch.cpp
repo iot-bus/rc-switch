@@ -32,6 +32,8 @@
 */
 
 #include "RCSwitch.h"
+#include "RFM69OOKregisters.h"
+#include <SPI.h>
 
 #ifdef RaspberryPi
     // PROGMEM and _P functions are for AVR based microprocessors,
@@ -92,19 +94,216 @@ volatile unsigned int RCSwitch::nReceivedBitlength = 0;
 volatile unsigned int RCSwitch::nReceivedDelay = 0;
 volatile unsigned int RCSwitch::nReceivedProtocol = 0;
 int RCSwitch::nReceiveTolerance = 60;
+//const unsigned int RCSwitch::nSeparationLimit = 9176;
+//const unsigned int RCSwitch::nSeparationLimit = 397*31;
 const unsigned int RCSwitch::nSeparationLimit = 4300;
 // separationLimit: minimum microseconds between received codes, closer codes are ignored.
 // according to discussion on issue #14 it might be more suitable to set the separation
 // limit to the same time as the 'low' part of the sync signal for the current protocol.
-unsigned int RCSwitch::timings[RCSWITCH_MAX_CHANGES];
+uint32_t RCSwitch::timings[RCSWITCH_MAX_CHANGES];
 #endif
+
+// RFM69
+
+volatile byte RCSwitch::_mode;  // current transceiver state
+volatile int RCSwitch::RSSI; 	// most accurate RSSI during reception (closest to the reception)
+RCSwitch* RCSwitch::selfPointer;
+
+bool RCSwitch::initialize()
+{
+  const byte CONFIG[][2] =
+  {
+    /* 0x01 */ { REG_OPMODE, RF_OPMODE_SEQUENCER_OFF | RF_OPMODE_LISTEN_OFF | RF_OPMODE_STANDBY },
+    /* 0x02 */ { REG_DATAMODUL, RF_DATAMODUL_DATAMODE_CONTINUOUSNOBSYNC | RF_DATAMODUL_MODULATIONTYPE_OOK | RF_DATAMODUL_MODULATIONSHAPING_00 }, // no shaping
+    /* 0x03 */ { REG_BITRATEMSB, 0x03}, // bitrate: 32768 Hz
+    /* 0x04 */ { REG_BITRATELSB, 0xD1},
+    ///* 0x03 */ { REG_BITRATEMSB, 0x1A}, // bitrate: 4800 Hz
+    ///* 0x04 */ { REG_BITRATELSB, 0x0B},
+    /* 0x19 */ { REG_RXBW, RF_RXBW_DCCFREQ_010 | RF_RXBW_MANT_24 | RF_RXBW_EXP_4}, // BW: 10.4 kHz
+    /* 0x1B */ { REG_OOKPEAK, RF_OOKPEAK_THRESHTYPE_PEAK | RF_OOKPEAK_PEAKTHRESHSTEP_000 | RF_OOKPEAK_PEAKTHRESHDEC_000 },
+    /* 0x1D */ { REG_OOKFIX, /* 6 */ 30 }, // Fixed threshold value (in dB) in the OOK demodulator
+    /* 0x29 */ { REG_RSSITHRESH, /*140*/ 140}, // RSSI threshold in dBm = -(REG_RSSITHRESH / 2)
+    /* 0x6F */ { REG_TESTDAGC, RF_DAGC_IMPROVED_LOWBETA0 }, // run DAGC continuously in RX mode, recommended default for AfcLowBetaOn=0
+    /* */      { REG_TESTLNA, SENSITIVITY_BOOST_HIGH}, // turn on sensitivity boost
+    ///* */      {REG_LNA, RF_LNA_GAINSELECT_MAX}, // MAX GAIN
+    {255, 0}
+  };
+
+  pinMode(_slaveSelectPin, OUTPUT);
+  SPI.begin();
+
+  for (byte i = 0; CONFIG[i][0] != 255; i++)
+    writeReg(CONFIG[i][0], CONFIG[i][1]);
+
+  setHighPower(_isRFM69HW); // called regardless if it's a RFM69W or RFM69HW
+  setMode(RF69OOK_MODE_STANDBY);
+    while ((readReg(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // Wait for ModeReady
+
+  selfPointer = this;
+  return true;
+}
+
+// set OOK fixed threshold
+void RCSwitch::setFixedThreshold(uint8_t threshold)
+{
+  writeReg(REG_OOKFIX, threshold);
+}
+
+// Set literal frequency using floating point MHz value
+void RCSwitch::setFrequencyMHz(float f)
+{
+  setFrequency(f * 1000000);
+}
+
+// set the frequency (in Hz)
+void RCSwitch::setFrequency(uint32_t freqHz)
+{
+  // TODO: p38 hopping sequence may need to be followed in some cases
+  freqHz /= RF69OOK_FSTEP; // divide down by FSTEP to get FRF
+  writeReg(REG_FRFMSB, freqHz >> 16);
+  writeReg(REG_FRFMID, freqHz >> 8);
+  writeReg(REG_FRFLSB, freqHz);
+}
+
+// Turn the radio into OOK listening mode
+void RCSwitch::receiveBegin()
+{
+  // Serial.println("begin");
+  // pinMode(_interruptPin, INPUT);
+  // Serial.println(_interruptPin);
+  // attachInterrupt(_interruptNum, handleInterrupt, CHANGE); // generate interrupts in RX mode
+  setMode(RF69OOK_MODE_RX);
+}
+
+// Turn the radio back to standby
+void RCSwitch::receiveEnd()
+{
+  setMode(RF69OOK_MODE_STANDBY);
+  //detachInterrupt(_interruptNum); // make sure there're no surprises
+}
+
+byte RCSwitch::readReg(byte addr)
+{
+  select();
+  SPI.transfer(addr & 0x7F);
+  byte regval = SPI.transfer(0);
+  unselect();
+  return regval;
+}
+
+void RCSwitch::writeReg(byte addr, byte value)
+{
+  select();
+  SPI.transfer(addr | 0x80);
+  SPI.transfer(value);
+  unselect();
+}
+
+// Select the transceiver
+void RCSwitch::select() {
+  noInterrupts();
+  // save current SPI settings
+  #ifndef ESP32
+  _SPCR = SPCR;
+  _SPSR = SPSR;
+  #endif
+  // set RFM69 SPI settings
+  SPI.setDataMode(SPI_MODE0);
+  SPI.setBitOrder(MSBFIRST);
+  SPI.setClockDivider(SPI_CLOCK_DIV2); //decided to slow down from DIV2 after SPI stalling in some instances, especially visible on mega1284p when RFM69 and FLASH chip both present
+  digitalWrite(_slaveSelectPin, LOW);
+}
+
+/// Unselect the transceiver chip
+void RCSwitch::unselect() {
+  digitalWrite(_slaveSelectPin, HIGH);
+  // restore SPI settings to what they were before talking to RFM69
+  #ifndef ESP32
+  SPCR = _SPCR;
+  SPSR = _SPSR;
+  #endif
+  interrupts();
+}
+
+void RCSwitch::setMode(byte newMode)
+{
+    if (newMode == _mode) return;
+
+    switch (newMode) {
+        case RF69OOK_MODE_TX:
+            writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_TRANSMITTER);
+      if (_isRFM69HW) setHighPowerRegs(true);
+            break;
+        case RF69OOK_MODE_RX:
+            writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_RECEIVER);
+      if (_isRFM69HW) setHighPowerRegs(false);
+            break;
+        case RF69OOK_MODE_SYNTH:
+            writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_SYNTHESIZER);
+            break;
+        case RF69OOK_MODE_STANDBY:
+            writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_STANDBY);
+            break;
+        case RF69OOK_MODE_SLEEP:
+            writeReg(REG_OPMODE, (readReg(REG_OPMODE) & 0xE3) | RF_OPMODE_SLEEP);
+            break;
+        default: return;
+    }
+
+    // waiting for mode ready is necessary when going from sleep because the FIFO may not be immediately available from previous mode
+    while (_mode == RF69OOK_MODE_SLEEP && (readReg(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // Wait for ModeReady
+
+    _mode = newMode;
+}
+
+void RCSwitch::setHighPower(bool onOff) {
+  _isRFM69HW = onOff;
+  writeReg(REG_OCP, _isRFM69HW ? RF_OCP_OFF : RF_OCP_ON);
+  if (_isRFM69HW) // turning ON
+    writeReg(REG_PALEVEL, (readReg(REG_PALEVEL) & 0x1F) | RF_PALEVEL_PA1_ON | RF_PALEVEL_PA2_ON); // enable P1 & P2 amplifier stages
+  else
+    writeReg(REG_PALEVEL, RF_PALEVEL_PA0_ON | RF_PALEVEL_PA1_OFF | RF_PALEVEL_PA2_OFF | _powerLevel); // enable P0 only
+}
+
+void RCSwitch::setHighPowerRegs(bool onOff) {
+  writeReg(REG_TESTPA1, onOff ? 0x5D : 0x55);
+  writeReg(REG_TESTPA2, onOff ? 0x7C : 0x70);
+}
+
+int8_t RCSwitch::readRSSI(bool forceTrigger) {
+  if (forceTrigger)
+  {
+    // RSSI trigger not needed if DAGC is in continuous mode
+    writeReg(REG_RSSICONFIG, RF_RSSI_START);
+    while ((readReg(REG_RSSICONFIG) & RF_RSSI_DONE) == 0x00); // Wait for RSSI_Ready
+  }
+  return -(readReg(REG_RSSIVALUE) >> 1);
+}
+
+// end of RFM69
 
 RCSwitch::RCSwitch() {
   this->nTransmitterPin = -1;
   this->setRepeatTransmit(10);
   this->setProtocol(1);
+
+  // RFM69
+
+  _slaveSelectPin = SS;
+  _mode = RF69OOK_MODE_STANDBY;
+  _powerLevel = 31;
+  _isRFM69HW = false;
+
+  initialize();
+  //  radio.setBandwidth(OOK_BW_10_4);
+  //setRSSIThreshold(-70);
+  setFixedThreshold(40); // 30
+  //  radio.setSensitivityBoost(SENSITIVITY_BOOST_HIGH);
+  setFrequencyMHz(433.92);
+  receiveBegin();
+
   #if not defined( RCSwitchDisableReceiving )
-  this->nReceiverInterrupt = -1;
+  this->nReceiverInterruptPin = -1;
   this->setReceiveTolerance(60);
   RCSwitch::nReceivedValue = 0;
   #endif
@@ -490,7 +689,7 @@ void RCSwitch::send(unsigned long code, unsigned int length) {
 
 #if not defined( RCSwitchDisableReceiving )
   // make sure the receiver is disabled while we transmit
-  int nReceiverInterrupt_backup = nReceiverInterrupt;
+  int nReceiverInterrupt_backup = nReceiverInterruptPin;
   if (nReceiverInterrupt_backup != -1) {
     this->disableReceive();
   }
@@ -536,18 +735,23 @@ void RCSwitch::transmit(HighLow pulses) {
  * Enable receiving data
  */
 void RCSwitch::enableReceive(int interrupt) {
-  this->nReceiverInterrupt = interrupt;
+  this->nReceiverInterruptPin = interrupt;
   this->enableReceive();
 }
 
 void RCSwitch::enableReceive() {
-  if (this->nReceiverInterrupt != -1) {
+  if (this->nReceiverInterruptPin != -1) {
     RCSwitch::nReceivedValue = 0;
     RCSwitch::nReceivedBitlength = 0;
 #if defined(RaspberryPi) // Raspberry Pi
-    wiringPiISR(this->nReceiverInterrupt, INT_EDGE_BOTH, &handleInterrupt);
+    wiringPiISR(this->nReceiverInterruptPin, INT_EDGE_BOTH, &handleInterrupt);
+#elif defined(ESP32) // ESP32
+    pinMode(this->nReceiverInterruptPin, INPUT);
+    attachInterrupt(digitalPinToInterrupt(this->nReceiverInterruptPin), handleInterrupt, CHANGE);
+    //attachInterrupt(digitalPinToInterrupt(this->nReceiverInterruptPin), handleInterrupt, RISING);
+    //attachInterrupt(digitalPinToInterrupt(this->nReceiverInterruptPin), handleInterruptFalling, FALLING);
 #else // Arduino
-    attachInterrupt(this->nReceiverInterrupt, handleInterrupt, CHANGE);
+    attachInterrupt(this->nReceiverInterruptPin, handleInterrupt, CHANGE);
 #endif
   }
 }
@@ -557,9 +761,9 @@ void RCSwitch::enableReceive() {
  */
 void RCSwitch::disableReceive() {
 #if not defined(RaspberryPi) // Arduino
-  detachInterrupt(this->nReceiverInterrupt);
+  detachInterrupt(this->nReceiverInterruptPin);
 #endif // For Raspberry Pi (wiringPi) you can't unregister the ISR
-  this->nReceiverInterrupt = -1;
+  this->nReceiverInterruptPin = -1;
 }
 
 bool RCSwitch::available() {
@@ -595,17 +799,26 @@ static inline unsigned int diff(int A, int B) {
   return abs(A - B);
 }
 
+//volatile int interruptCounter = 0;
 /**
  *
  */
-bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCount) {
+bool IRAM_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCount) {
 #if defined(ESP8266) || defined(ESP32)
     const Protocol &pro = proto[p-1];
 #else
     Protocol pro;
     memcpy_P(&pro, &proto[p-1], sizeof(Protocol));
 #endif
+    //Serial.println("Checking protocol");
+    //Serial.print("Interrupt counter: ");
+    //Serial.println(interruptCounter);
 
+    // for(int i=0;i<changeCount;i++){
+    //   Serial.print(RCSwitch::timings[i]);
+    //   Serial.print(" ");
+    // }  
+    // Serial.println();
     unsigned long code = 0;
     //Assuming the longer pulse length is the pulse captured in timings[0]
     const unsigned int syncLengthInPulses =  ((pro.syncFactor.low) > (pro.syncFactor.high)) ? (pro.syncFactor.low) : (pro.syncFactor.high);
@@ -657,20 +870,51 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
     return false;
 }
 
-void RECEIVE_ATTR RCSwitch::handleInterrupt() {
+// void RECEIVE_ATTR RCSwitch::handleInterrupt() {
+//   //detachInterrupt(selfPointer->nReceiverInterruptPin); // detach the DIO2 interrupt 
+//   Serial.print(" ");
+//   static unsigned int count = 0;
+//   static uint8_t values[1000];
+//   //values[count] = selfPointer->readRSSI(false);
+//   values[count] = digitalRead(selfPointer->nReceiverInterruptPin);
+//   if (count >= 999){
+//     return;
+//   // if (count < 300)
+//   //   count = 0; 
+//   //Serial.print(count++);
+//   } 
+//   else{
+//     Serial.print(values[count++]);
+//     Serial.print(" ");
+//   }
+//   //selfPointer->interruptSetup(); // turn on the timer 
+// } 
 
-  static unsigned int changeCount = 0;
-  static unsigned long lastTime = 0;
-  static unsigned int repeatCount = 0;
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-  const long time = micros();
-  const unsigned int duration = time - lastTime;
+void IRAM_ATTR RCSwitch::handleInterrupt() {
+  portENTER_CRITICAL(&mux);
+  //interruptCounter++;
+  static uint8_t changeCount = 0;
+  static uint8_t repeatCount = 0;
+  static uint32_t lastTime = 0;
 
-  if (duration > RCSwitch::nSeparationLimit) {
+  const uint32_t time = micros();
+  const uint32_t duration = time - lastTime;
+  const uint16_t sensitivity = duration % RCSWITCH_PULSE_LENGTH;
+
+  // ignore glitches
+  if (duration < RCSWITCH_MIN_DURATION /*|| sensitivity > RCSWITCH_PULSE_SENSITIVITY*/ ){
+    lastTime = time;  
+    portEXIT_CRITICAL(&mux);
+    return;
+  }
+  if (duration > RCSwitch::nSeparationLimit) {  
+  //if (diff(duration, nSeparationLimit) < 200) {
     // A long stretch without signal level change occurred. This could
     // be the gap between two transmission.
-    if (diff(duration, RCSwitch::timings[0]) < 200) {
-      // This long signal is close in length to the long signal which
+    if (diff(duration, RCSwitch::timings[0]) < 200 ) {
+       // This long signal is close in length to the long signal which
       // started the previously recorded timings; this suggests that
       // it may indeed by a a gap between two transmissions (we assume
       // here that a sender will send the signal multiple times,
@@ -697,5 +941,101 @@ void RECEIVE_ATTR RCSwitch::handleInterrupt() {
 
   RCSwitch::timings[changeCount++] = duration;
   lastTime = time;  
+  portEXIT_CRITICAL(&mux);
 }
+
+// void ICACHE_RAM_ATTR RCSwitch::handleInterrupt() {
+
+//   static unsigned int changeCount = 0;
+//   static unsigned long lastTime = 0;
+//   static unsigned int repeatCount = 0;
+
+//   const long time = micros();
+//   const unsigned int duration = time - lastTime;
+
+//   // noInterrupts();
+//   // const unsigned int value = digitalRead(selfPointer->nReceiverInterruptPin);
+//   // interrupts();  
+
+//   //Serial.print(" value: ");Serial.print(value);Serial.print(" duration: ");Serial.println(duration);
+
+//   if (duration > RCSwitch::nSeparationLimit) {
+//     //Serial.println("Gap");
+//     //Serial.print("Duration: ");Serial.print(duration);Serial.print(" Initial: ");Serial.print(RCSwitch::timings[0]);
+//     // A long stretch without signal level change occurred. This could
+//     // be the gap between two transmission.
+//     if ((diff(duration, 9000) < 200) && (repeatCount == 0)) { // start
+//       changeCount = 0;
+//       repeatCount = 1;
+//       RCSwitch::timings[changeCount++] = duration;
+//       //Serial.println("Start of sequence");
+//     }
+//     else if ((diff(duration, 9000) < 200) && (repeatCount == 1)) {   
+//       // This long signal is close in length to the long signal which
+//       // started the previously recorded timings; this suggests that
+//       // it may indeed by a a gap between two transmissions (we assume
+//       // here that a sender will send the signal multiple times,
+//       // with roughly the same gap between them).
+//       //Serial.println("Repeat 2");
+//       for(unsigned int i = 1; i <= numProto; i++) {
+//         if (receiveProtocol(i, changeCount)) {
+//           // receive succeeded for protocol i
+//           Serial.print("Protocol: ");
+//           Serial.println(i);
+//           break;
+//         }
+//       }
+//       repeatCount = 0;
+//     }
+//     changeCount = 0;
+//   }
+ 
+//   // detect overflow
+//   if (changeCount >= RCSWITCH_MAX_CHANGES) {
+//     changeCount = 0;
+//     repeatCount = 0;
+//   }
+
+//   RCSwitch::timings[changeCount++] = duration;
+//   lastTime = time;
+// }
+
+hw_timer_t * RCSwitch::timer = NULL; // timer
+
+void RCSwitch::interruptSetup(){     
+  // Use 1st timer of 4 (counted from zero).
+  // Set 80 divider for prescaler (see ESP32 Technical Reference Manual for more
+  timer = timerBegin(0, 80, true);
+  
+  // Attach ISRTr function to our timer.
+  timerAttachInterrupt(timer, &handleTimer, true);
+
+  // Set alarm to call isr function every x microseconds 
+  // Repeat the alarm (third parameter)
+  timerAlarmWrite(timer, 592, true);
+
+  // Start alarm
+  timerAlarmEnable(timer);
+   
+} // end interruptSetup
+
+void IRAM_ATTR RCSwitch::handleTimer() {
+  
+  static unsigned int count = 0;
+  static uint8_t values[1000];
+  //values[count] = selfPointer->readRSSI(false);
+  values[count] = digitalRead(selfPointer->nReceiverInterruptPin);
+  if (count >= 999){
+    return;
+  // if (count < 300)
+  //   count = 0; 
+  //Serial.print(count++);
+  } 
+  else{
+    Serial.print(values[count++]);
+    Serial.print(" ");
+  }
+
+}
+
 #endif
