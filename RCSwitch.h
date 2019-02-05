@@ -83,7 +83,6 @@ class RCSwitch {
     void setFixedThreshold(uint8_t threshold);
     void setFrequencyMHz(float f);
     void setFrequency(uint32_t freqHz);
-    void receiveBegin();
     void receiveEnd();
     void setMode(byte newMode);
     byte readReg(byte addr);

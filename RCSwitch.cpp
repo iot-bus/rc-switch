@@ -165,23 +165,6 @@ void RCSwitch::setFrequency(uint32_t freqHz)
   writeReg(REG_FRFLSB, freqHz);
 }
 
-// Turn the radio into OOK listening mode
-void RCSwitch::receiveBegin()
-{
-  // Serial.println("begin");
-  // pinMode(_interruptPin, INPUT);
-  // Serial.println(_interruptPin);
-  // attachInterrupt(_interruptNum, handleInterrupt, CHANGE); // generate interrupts in RX mode
-  setMode(RF69OOK_MODE_RX);
-}
-
-// Turn the radio back to standby
-void RCSwitch::receiveEnd()
-{
-  setMode(RF69OOK_MODE_STANDBY);
-  //detachInterrupt(_interruptNum); // make sure there're no surprises
-}
-
 byte RCSwitch::readReg(byte addr)
 {
   select();
@@ -300,7 +283,6 @@ RCSwitch::RCSwitch() {
   setFixedThreshold(40); // 30
   //  radio.setSensitivityBoost(SENSITIVITY_BOOST_HIGH);
   setFrequencyMHz(433.92);
-  receiveBegin();
 
   #if not defined( RCSwitchDisableReceiving )
   this->nReceiverInterruptPin = -1;
@@ -371,6 +353,7 @@ void RCSwitch::setReceiveTolerance(int nPercent) {
 void RCSwitch::enableTransmit(int nTransmitterPin) {
   this->nTransmitterPin = nTransmitterPin;
   pinMode(this->nTransmitterPin, OUTPUT);
+  setMode(RF69OOK_MODE_TX);
 }
 
 /**
@@ -378,6 +361,7 @@ void RCSwitch::enableTransmit(int nTransmitterPin) {
   */
 void RCSwitch::disableTransmit() {
   this->nTransmitterPin = -1;
+  setMode(RF69OOK_MODE_STANDBY);
 }
 
 /**
@@ -748,11 +732,10 @@ void RCSwitch::enableReceive() {
 #elif defined(ESP32) // ESP32
     pinMode(this->nReceiverInterruptPin, INPUT);
     attachInterrupt(digitalPinToInterrupt(this->nReceiverInterruptPin), handleInterrupt, CHANGE);
-    //attachInterrupt(digitalPinToInterrupt(this->nReceiverInterruptPin), handleInterrupt, RISING);
-    //attachInterrupt(digitalPinToInterrupt(this->nReceiverInterruptPin), handleInterruptFalling, FALLING);
 #else // Arduino
     attachInterrupt(this->nReceiverInterruptPin, handleInterrupt, CHANGE);
 #endif
+    setMode(RF69OOK_MODE_RX);
   }
 }
 
@@ -764,6 +747,7 @@ void RCSwitch::disableReceive() {
   detachInterrupt(this->nReceiverInterruptPin);
 #endif // For Raspberry Pi (wiringPi) you can't unregister the ISR
   this->nReceiverInterruptPin = -1;
+  setMode(RF69OOK_MODE_STANDBY);
 }
 
 bool RCSwitch::available() {
@@ -870,26 +854,6 @@ bool IRAM_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCount) 
     return false;
 }
 
-// void RECEIVE_ATTR RCSwitch::handleInterrupt() {
-//   //detachInterrupt(selfPointer->nReceiverInterruptPin); // detach the DIO2 interrupt 
-//   Serial.print(" ");
-//   static unsigned int count = 0;
-//   static uint8_t values[1000];
-//   //values[count] = selfPointer->readRSSI(false);
-//   values[count] = digitalRead(selfPointer->nReceiverInterruptPin);
-//   if (count >= 999){
-//     return;
-//   // if (count < 300)
-//   //   count = 0; 
-//   //Serial.print(count++);
-//   } 
-//   else{
-//     Serial.print(values[count++]);
-//     Serial.print(" ");
-//   }
-//   //selfPointer->interruptSetup(); // turn on the timer 
-// } 
-
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 void IRAM_ATTR RCSwitch::handleInterrupt() {
@@ -942,100 +906,6 @@ void IRAM_ATTR RCSwitch::handleInterrupt() {
   RCSwitch::timings[changeCount++] = duration;
   lastTime = time;  
   portEXIT_CRITICAL(&mux);
-}
-
-// void ICACHE_RAM_ATTR RCSwitch::handleInterrupt() {
-
-//   static unsigned int changeCount = 0;
-//   static unsigned long lastTime = 0;
-//   static unsigned int repeatCount = 0;
-
-//   const long time = micros();
-//   const unsigned int duration = time - lastTime;
-
-//   // noInterrupts();
-//   // const unsigned int value = digitalRead(selfPointer->nReceiverInterruptPin);
-//   // interrupts();  
-
-//   //Serial.print(" value: ");Serial.print(value);Serial.print(" duration: ");Serial.println(duration);
-
-//   if (duration > RCSwitch::nSeparationLimit) {
-//     //Serial.println("Gap");
-//     //Serial.print("Duration: ");Serial.print(duration);Serial.print(" Initial: ");Serial.print(RCSwitch::timings[0]);
-//     // A long stretch without signal level change occurred. This could
-//     // be the gap between two transmission.
-//     if ((diff(duration, 9000) < 200) && (repeatCount == 0)) { // start
-//       changeCount = 0;
-//       repeatCount = 1;
-//       RCSwitch::timings[changeCount++] = duration;
-//       //Serial.println("Start of sequence");
-//     }
-//     else if ((diff(duration, 9000) < 200) && (repeatCount == 1)) {   
-//       // This long signal is close in length to the long signal which
-//       // started the previously recorded timings; this suggests that
-//       // it may indeed by a a gap between two transmissions (we assume
-//       // here that a sender will send the signal multiple times,
-//       // with roughly the same gap between them).
-//       //Serial.println("Repeat 2");
-//       for(unsigned int i = 1; i <= numProto; i++) {
-//         if (receiveProtocol(i, changeCount)) {
-//           // receive succeeded for protocol i
-//           Serial.print("Protocol: ");
-//           Serial.println(i);
-//           break;
-//         }
-//       }
-//       repeatCount = 0;
-//     }
-//     changeCount = 0;
-//   }
- 
-//   // detect overflow
-//   if (changeCount >= RCSWITCH_MAX_CHANGES) {
-//     changeCount = 0;
-//     repeatCount = 0;
-//   }
-
-//   RCSwitch::timings[changeCount++] = duration;
-//   lastTime = time;
-// }
-
-hw_timer_t * RCSwitch::timer = NULL; // timer
-
-void RCSwitch::interruptSetup(){     
-  // Use 1st timer of 4 (counted from zero).
-  // Set 80 divider for prescaler (see ESP32 Technical Reference Manual for more
-  timer = timerBegin(0, 80, true);
-  
-  // Attach ISRTr function to our timer.
-  timerAttachInterrupt(timer, &handleTimer, true);
-
-  // Set alarm to call isr function every x microseconds 
-  // Repeat the alarm (third parameter)
-  timerAlarmWrite(timer, 592, true);
-
-  // Start alarm
-  timerAlarmEnable(timer);
-   
-} // end interruptSetup
-
-void IRAM_ATTR RCSwitch::handleTimer() {
-  
-  static unsigned int count = 0;
-  static uint8_t values[1000];
-  //values[count] = selfPointer->readRSSI(false);
-  values[count] = digitalRead(selfPointer->nReceiverInterruptPin);
-  if (count >= 999){
-    return;
-  // if (count < 300)
-  //   count = 0; 
-  //Serial.print(count++);
-  } 
-  else{
-    Serial.print(values[count++]);
-    Serial.print(" ");
-  }
-
 }
 
 #endif
