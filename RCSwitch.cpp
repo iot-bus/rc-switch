@@ -97,6 +97,7 @@ int RCSwitch::nReceiveTolerance = 60;
 //const unsigned int RCSwitch::nSeparationLimit = 9176;
 //const unsigned int RCSwitch::nSeparationLimit = 397*31;
 const unsigned int RCSwitch::nSeparationLimit = 4300;
+//const unsigned int RCSwitch::nSeparationLimit = 5000;
 // separationLimit: minimum microseconds between received codes, closer codes are ignored.
 // according to discussion on issue #14 it might be more suitable to set the separation
 // limit to the same time as the 'low' part of the sync signal for the current protocol.
@@ -124,8 +125,8 @@ bool RCSwitch::initialize()
     /* 0x1D */ { REG_OOKFIX, /* 6 */ 30 }, // Fixed threshold value (in dB) in the OOK demodulator
     /* 0x29 */ { REG_RSSITHRESH, /*140*/ 140}, // RSSI threshold in dBm = -(REG_RSSITHRESH / 2)
     /* 0x6F */ { REG_TESTDAGC, RF_DAGC_IMPROVED_LOWBETA0 }, // run DAGC continuously in RX mode, recommended default for AfcLowBetaOn=0
-    /* */      { REG_TESTLNA, SENSITIVITY_BOOST_HIGH}, // turn on sensitivity boost
-    ///* */      {REG_LNA, RF_LNA_GAINSELECT_MAX}, // MAX GAIN
+    ///* */    { REG_TESTLNA, SENSITIVITY_BOOST_HIGH}, // turn on sensitivity boost
+    ///* */    { REG_LNA, RF_LNA_GAINSELECT_MAX}, // MAX GAIN
     {255, 0}
   };
 
@@ -139,6 +140,13 @@ bool RCSwitch::initialize()
   setMode(RF69OOK_MODE_STANDBY);
     while ((readReg(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // Wait for ModeReady
 
+  //setBandwidth(OOK_BW_10_4);
+  setRSSIThreshold(140);
+  setFixedThreshold(47); // 30
+  //  radio.setSensitivityBoost(SENSITIVITY_BOOST_HIGH);
+  setFrequencyMHz(433.9);
+  setMode(RF69OOK_MODE_RX);  
+
   selfPointer = this;
   return true;
 }
@@ -148,6 +156,27 @@ void RCSwitch::setFixedThreshold(uint8_t threshold)
 {
   writeReg(REG_OOKFIX, threshold);
 }
+
+// set RSSI threshold
+void RCSwitch::setRSSIThreshold(int8_t rssi)
+{
+  writeReg(REG_RSSITHRESH, (-rssi << 1));
+}
+
+// Set bitrate
+void RCSwitch::setBitrate(uint32_t bitrate)
+{
+  bitrate = 32000000 / bitrate; // 32M = XCO freq.
+  writeReg(REG_BITRATEMSB, bitrate >> 8);
+  writeReg(REG_BITRATELSB, bitrate);
+}
+
+// set OOK bandwidth
+void RCSwitch::setBandwidth(uint8_t bw)
+{
+  writeReg(REG_RXBW, readReg(REG_RXBW) & 0xE0 | bw);
+}
+
 
 // Set literal frequency using floating point MHz value
 void RCSwitch::setFrequencyMHz(float f)
@@ -265,12 +294,15 @@ int8_t RCSwitch::readRSSI(bool forceTrigger) {
 
 // end of RFM69
 
-RCSwitch::RCSwitch() {
+RCSwitch::RCSwitch(int resetPin) {
+
   this->nTransmitterPin = -1;
   this->setRepeatTransmit(10);
   this->setProtocol(1);
 
   // RFM69
+  this->nResetPin = resetPin;
+  reset();
 
   _slaveSelectPin = SS;
   _mode = RF69OOK_MODE_STANDBY;
@@ -278,17 +310,23 @@ RCSwitch::RCSwitch() {
   _isRFM69HW = false;
 
   initialize();
-  //  radio.setBandwidth(OOK_BW_10_4);
-  //setRSSIThreshold(-70);
-  setFixedThreshold(40); // 30
-  //  radio.setSensitivityBoost(SENSITIVITY_BOOST_HIGH);
-  setFrequencyMHz(433.92);
 
   #if not defined( RCSwitchDisableReceiving )
   this->nReceiverInterruptPin = -1;
   this->setReceiveTolerance(60);
   RCSwitch::nReceivedValue = 0;
   #endif
+}
+
+void RCSwitch::reset(void)
+{
+  // Reset the RFM69 Radio
+  pinMode(nResetPin, OUTPUT);
+  digitalWrite(nResetPin, HIGH);
+  delayMicroseconds(100);
+  digitalWrite(nResetPin, LOW);
+  // wait until chip ready
+  delay(5);
 }
 
 /**
@@ -353,6 +391,8 @@ void RCSwitch::setReceiveTolerance(int nPercent) {
 void RCSwitch::enableTransmit(int nTransmitterPin) {
   this->nTransmitterPin = nTransmitterPin;
   pinMode(this->nTransmitterPin, OUTPUT);
+  reset();
+  initialize();
   setMode(RF69OOK_MODE_TX);
 }
 
@@ -735,6 +775,8 @@ void RCSwitch::enableReceive() {
 #else // Arduino
     attachInterrupt(this->nReceiverInterruptPin, handleInterrupt, CHANGE);
 #endif
+    reset();
+    initialize();
     setMode(RF69OOK_MODE_RX);
   }
 }
@@ -787,7 +829,7 @@ static inline unsigned int diff(int A, int B) {
 /**
  *
  */
-bool IRAM_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCount) {
+bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCount) {
 #if defined(ESP8266) || defined(ESP32)
     const Protocol &pro = proto[p-1];
 #else
@@ -856,7 +898,7 @@ bool IRAM_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCount) 
 
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
-void IRAM_ATTR RCSwitch::handleInterrupt() {
+void RECEIVE_ATTR RCSwitch::handleInterrupt() {
   portENTER_CRITICAL(&mux);
   //interruptCounter++;
   static uint8_t changeCount = 0;
@@ -865,11 +907,9 @@ void IRAM_ATTR RCSwitch::handleInterrupt() {
 
   const uint32_t time = micros();
   const uint32_t duration = time - lastTime;
-  const uint16_t sensitivity = duration % RCSWITCH_PULSE_LENGTH;
 
   // ignore glitches
-  if (duration < RCSWITCH_MIN_DURATION /*|| sensitivity > RCSWITCH_PULSE_SENSITIVITY*/ ){
-    lastTime = time;  
+  if (duration < RCSWITCH_MIN_DURATION){ 
     portEXIT_CRITICAL(&mux);
     return;
   }

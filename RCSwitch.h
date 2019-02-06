@@ -61,18 +61,13 @@
 #define RCSWITCH_MAX_CHANGES 67
 
 // Ignore glitches - ignore pulses less than this length in microseconds
-#define RCSWITCH_MIN_DURATION 150
-
-// Target pulse length
-#define RCSWITCH_PULSE_LENGTH 300
-
-// Pulse length sensitivity
-#define RCSWITCH_PULSE_SENSITIVITY 25
+#define RCSWITCH_MIN_DURATION 145
 
 class RCSwitch {
 
   public:
-    RCSwitch();
+    //RCSwitch();
+    RCSwitch(int resetPin = 17);
     
     // RFM69
 
@@ -83,6 +78,9 @@ class RCSwitch {
     void setFixedThreshold(uint8_t threshold);
     void setFrequencyMHz(float f);
     void setFrequency(uint32_t freqHz);
+    void setBitrate(uint32_t bitrate);
+    void setBandwidth(uint8_t bw);
+    void setRSSIThreshold(int8_t rssi);
     void receiveEnd();
     void setMode(byte newMode);
     byte readReg(byte addr);
@@ -182,8 +180,6 @@ class RCSwitch {
     static volatile byte _mode; //should be protected?
 
     byte _slaveSelectPin;
-    byte _interruptPin;
-    byte _interruptNum;
     byte _powerLevel;
     bool _isRFM69HW;
     byte _SPCR;
@@ -198,14 +194,13 @@ class RCSwitch {
 
     #if not defined( RCSwitchDisableReceiving )
     static void handleInterrupt();
-    void interruptSetup(); 
-    static void handleTimer();
-    static hw_timer_t * timer; // timer
+    void reset(void);
     static bool receiveProtocol(const int p, unsigned int changeCount);
     int nReceiverInterruptPin;
     #endif
     int nTransmitterPin;
     int nRepeatTransmit;
+    int nResetPin;
     
     Protocol protocol;
 
