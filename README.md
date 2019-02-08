@@ -4,6 +4,9 @@ This fork of rc-switch enables the Hope RFM69 modules to be used to control and 
 It incorporate a modified version of Kobuki's RFM96OOK OOK library which itself is a version of LowPowerLabs. Kudos to the developers involved.
 This version has also been created to make it very simple to use the new IoT-Bus 433Mhz/915MHz boards with OOK and decoding/encoding many of the most common device protocols courtesy of the original rc-switch.
 
+This fork is only designed to run on ESP32, specifically the IoT-Bus 433Mhz board. Use the origianl library if you need 
+other platform support.
+
 The original rc-switch library information is below:
 
 [![Build Status](https://travis-ci.org/sui77/rc-switch.svg?branch=master)](https://travis-ci.org/sui77/rc-switch)
