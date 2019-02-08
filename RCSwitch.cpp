@@ -708,8 +708,8 @@ void RCSwitch::send(const char* sCodeWord) {
  * then the bit at position length-2, and so on, till finally the bit at position 0.
  */
 void RCSwitch::send(unsigned long code, unsigned int length) {
-   if (this->nTransmitterPin == -1)
-     return;
+  // if (this->nTransmitterPin == -1)
+  //   return;
 
 #if not defined( RCSwitchDisableReceiving )
   // make sure the receiver is disabled while we transmit
@@ -718,6 +718,7 @@ void RCSwitch::send(unsigned long code, unsigned int length) {
     this->disableReceive();
   }
 #endif
+  nTransmitterPin = 4;
   pinMode(nTransmitterPin, OUTPUT);
   setMode(RF69OOK_MODE_TX);
 
@@ -740,6 +741,9 @@ void RCSwitch::send(unsigned long code, unsigned int length) {
     this->enableReceive(nReceiverInterrupt_backup);
   }
 #endif
+  // pinMode(nReceiverInterruptPin, INPUT);
+  // setMode(RF69OOK_MODE_RX);
+
 }
 
 /**
@@ -762,7 +766,7 @@ void RCSwitch::transmit(HighLow pulses) {
  */
 void RCSwitch::enableReceive(int interrupt) {
   this->nReceiverInterruptPin = interrupt;
-  this->nTransmitterPin = interrupt; // we can transmit on the same pin
+  //this->nTransmitterPin = interrupt; // we can transmit on the same pin
   this->enableReceive();
 }
 

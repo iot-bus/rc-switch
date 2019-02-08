@@ -23,6 +23,7 @@ RadioProxy::~RadioProxy(){
 void RadioProxy::enableRadio(int radioPin, int pulseLength, int repetitions){
     if(!radioEnabled){
         // enable the radio
+        theRadio.enableReceive(radioPin);
         theRadio.setPulseLength(pulseLength);
         theRadio.setRepeatTransmit(repetitions);
         radioEnabled = true;
