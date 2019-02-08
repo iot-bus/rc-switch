@@ -20,13 +20,14 @@ RadioProxy::~RadioProxy(){
     removeProxy(this);
 }
 
-void RadioProxy::enableRadio(int radioPin, int pulseLength){
+void RadioProxy::enableRadio(int radioPin, int pulseLength, int repetitions){
     if(!radioEnabled){
         // enable the radio
-        theRadio.enableReceive(radioPin);
-        radioEnabled = true;
-        //mySwitch.enableTransmit(radioPin);
+        //theRadio.enableReceive(radioPin);
+        theRadio.enableTransmit(radioPin);
         theRadio.setPulseLength(pulseLength);
+        theRadio.setRepeatTransmit(repetitions);
+        radioEnabled = true;
     }
 }
 
@@ -111,6 +112,15 @@ int RadioProxy::mapRadioStatus(){
   return onOff;
 }
 
+void RadioProxy::mapPropertyStatus(){
+    std::vector<RadioProxy*>* proxies = RadioProxy::getProxies();
+    for (auto proxy : *proxies){
+      if(proxy->proxyType() == PROXY_OUTPUT){
+        mapPropertyStatus(proxy->property());
+      }
+    }
+}
+
 void RadioProxy::mapPropertyStatus(ThingProperty* property){
     
   ThingPropertyValue value = property->getValue();
@@ -154,10 +164,6 @@ RadioProxy* RadioProxy::getProxyForProperty(ThingProperty* property){
 
 std::vector<RadioProxy*>* RadioProxy::getProxies(){
     static std::vector<RadioProxy*> proxies;
-    // Serial.print("Proxy count: ");
-    // Serial.println(proxyCount);
-    // Serial.print("Proxies size: ");
-    // Serial.println(proxies.size());
     return &proxies;
 }
 

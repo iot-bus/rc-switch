@@ -23,9 +23,10 @@ class RadioProxy{
     void setCodeLength(int codeLength);
     bool status();
   
+    static void mapPropertyStatus();
     static void mapPropertyStatus(ThingProperty* property);
     static int mapRadioStatus();
-    static void enableRadio(int pin = 4, int pulseLength = 186);
+    static void enableRadio(int pin = 4, int pulseLength = 186, int repetitions = 10);
   
   private:
     ProxyType _proxyType;

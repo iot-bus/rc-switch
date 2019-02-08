@@ -708,8 +708,8 @@ void RCSwitch::send(const char* sCodeWord) {
  * then the bit at position length-2, and so on, till finally the bit at position 0.
  */
 void RCSwitch::send(unsigned long code, unsigned int length) {
-  if (this->nTransmitterPin == -1)
-    return;
+   if (this->nTransmitterPin == -1)
+     return;
 
 #if not defined( RCSwitchDisableReceiving )
   // make sure the receiver is disabled while we transmit
@@ -718,6 +718,8 @@ void RCSwitch::send(unsigned long code, unsigned int length) {
     this->disableReceive();
   }
 #endif
+  pinMode(nTransmitterPin, OUTPUT);
+  setMode(RF69OOK_MODE_TX);
 
   for (int nRepeat = 0; nRepeat < nRepeatTransmit; nRepeat++) {
     for (int i = length-1; i >= 0; i--) {
@@ -760,6 +762,7 @@ void RCSwitch::transmit(HighLow pulses) {
  */
 void RCSwitch::enableReceive(int interrupt) {
   this->nReceiverInterruptPin = interrupt;
+  this->nTransmitterPin = interrupt; // we can transmit on the same pin
   this->enableReceive();
 }
 
@@ -786,9 +789,12 @@ void RCSwitch::enableReceive() {
  */
 void RCSwitch::disableReceive() {
 #if not defined(RaspberryPi) // Arduino
-  detachInterrupt(this->nReceiverInterruptPin);
+  detachInterrupt(digitalPinToInterrupt(this->nReceiverInterruptPin));
+  pinMode(this->nReceiverInterruptPin, OUTPUT);
 #endif // For Raspberry Pi (wiringPi) you can't unregister the ISR
   this->nReceiverInterruptPin = -1;
+  RCSwitch::nReceivedValue = 0;
+  RCSwitch::nReceivedBitlength = 0;
   setMode(RF69OOK_MODE_STANDBY);
 }
 
@@ -910,6 +916,7 @@ void RECEIVE_ATTR RCSwitch::handleInterrupt() {
 
   // ignore glitches
   if (duration < RCSWITCH_MIN_DURATION){ 
+
     portEXIT_CRITICAL(&mux);
     return;
   }
@@ -941,7 +948,7 @@ void RECEIVE_ATTR RCSwitch::handleInterrupt() {
   if (changeCount >= RCSWITCH_MAX_CHANGES) {
     changeCount = 0;
     repeatCount = 0;
-  }
+   }
 
   RCSwitch::timings[changeCount++] = duration;
   lastTime = time;  
