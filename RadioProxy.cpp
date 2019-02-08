@@ -38,7 +38,7 @@ bool RadioProxy::radioEnabled = 0;
   * An instance list of all instances of RadioProxy is mainted for a proxy lookup table.
   */
     RadioProxy::RadioProxy(ProxyType proxyType, ThingProperty* property, uint32_t onCode, uint32_t offCode, 
-                                  int pulseLength, int protocol, int codeLength, int repetitions){
+                              int codeLength, int pulseLength, int protocol, int repetitions){
     _proxyType = proxyType;
     _property = property;
     _onCode = onCode;
@@ -200,7 +200,13 @@ int RadioProxy::mapRadioStatus(){
   if (theRadio.available()) {
     int32_t code =  theRadio.getReceivedValue();
     Serial.print("Received code: ");
-    Serial.println(code);
+    Serial.print(code);
+    Serial.print(", code length: ");
+    Serial.print(theRadio.getReceivedBitlength());
+    Serial.print(", pulse length: ");
+    Serial.print(theRadio.getReceivedDelay());
+    Serial.print(", protocol: ");
+    Serial.println(theRadio.getReceivedProtocol()); 
     
     RadioProxy* proxy = RadioProxy::getProxyForCode(code);
     if (proxy != nullptr){
@@ -245,8 +251,6 @@ void RadioProxy::mapPropertyStatus(ThingProperty* property){
     }
     else if(value.boolean == 0 && proxy->status() != false){
       RadioProxy::sendCodeToProxy(proxy, proxy->offCode());
-      Serial.print("Sending code ");
-      Serial.println(proxy->offCode());
       proxy->setStatus(false);
     }
   }
@@ -260,14 +264,14 @@ void RadioProxy::sendCodeToProxy(RadioProxy* proxy, uint32_t code){
   Serial.print(code);
   Serial.print(", code length: "); 
   Serial.print(proxy->codeLength());
-  Serial.print(", protocol: ");
-  Serial.print(proxy->protocol());
   Serial.print(", pulse length: ");    
-  Serial.print(proxy->pulseLength()); 
+  Serial.print(proxy->pulseLength());
+  Serial.print(", protocol: ");
+  Serial.print(proxy->protocol()); 
   Serial.print(", repetitions: "); 
   Serial.println(proxy->repetitions()); 
 
-  theRadio.setProtocol(proxy->protocol()); 
+  theRadio.setProtocol(proxy->protocol()); // needs to be first - rest of data is in protocol structure
   theRadio.setPulseLength(proxy->pulseLength()); 
   theRadio.setRepeatTransmit(proxy->repetitions()); 
   theRadio.send(code, proxy->codeLength());

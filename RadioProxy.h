@@ -36,7 +36,7 @@ class RadioProxy{
  
    public:
     RadioProxy(ProxyType proxyType, ThingProperty* property, uint32_t onCode, uint32_t offCode, 
-              int pulseLength = 186, int protocol = 1, int codeLength = 24, int repetitions = 10);
+              int codeLength = 24, int pulseLength = 186, int protocol = 1, int repetitions = 10);
     ~RadioProxy();
     ProxyType proxyType();
     ThingProperty* property();
