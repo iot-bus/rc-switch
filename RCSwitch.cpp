@@ -1,7 +1,18 @@
 /*
+  This fork of RCSwitch is designed to run on IoT-Bus. Default pins are set for
+  oddWires IoT-Bus 433Mhz board using a Hope RFM69 module. 
+  
+  The OOK capability is based on the work done by Kobuki here: 
+  https://github.com/kobuki/RFM69OOK which itself is derived for the work done by LowPowerLabs
+  here: https://github.com/LowPowerLab/RFM69
+
+  RadioProxy can be used with this version of RCSwitch to enable mapping between 
+  Mozilla WebThings and 433Mhz controllers and devices. 
+  RadioProxy is part of this fork of rc-switch.
+  
   RCSwitch - Arduino libary for remote control outlet switches
   Copyright (c) 2011 Suat Özgür.  All right reserved.
-  
+
   Contributors:
   - Andre Koehler / info(at)tomate-online(dot)de
   - Gordeev Andrey Vladimirovich / gordeev(at)openpyro(dot)com
@@ -14,7 +25,9 @@
   - Johann Richard / <first name>.<last name>(at)gmail(dot)com
   - Vlad Gheorghe / <first name>.<last name>(at)gmail(dot)com https://github.com/vgheo
   
-  Project home: https://github.com/sui77/rc-switch/
+  Original project home: https://github.com/sui77/rc-switch/
+
+  Project home for RCSwitch for iot-bus: https://github.com/iot-bus/rc-switch/
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -88,7 +101,6 @@ enum {
    numProto = sizeof(proto) / sizeof(proto[0])
 };
 
-#if not defined( RCSwitchDisableReceiving )
 volatile unsigned long RCSwitch::nReceivedValue = 0;
 volatile unsigned int RCSwitch::nReceivedBitlength = 0;
 volatile unsigned int RCSwitch::nReceivedDelay = 0;
@@ -102,7 +114,6 @@ const unsigned int RCSwitch::nSeparationLimit = 4300;
 // according to discussion on issue #14 it might be more suitable to set the separation
 // limit to the same time as the 'low' part of the sync signal for the current protocol.
 uint32_t RCSwitch::timings[RCSWITCH_MAX_CHANGES];
-#endif
 
 // RFM69
 
@@ -296,12 +307,12 @@ int8_t RCSwitch::readRSSI(bool forceTrigger) {
 
 RCSwitch::RCSwitch(int resetPin) {
 
-  this->nTransmitterPin = -1;
-  this->setRepeatTransmit(10);
-  this->setProtocol(1);
+  nTransmitterPin = -1;
+  setRepeatTransmit(10);
+  setProtocol(1);
 
   // RFM69
-  this->nResetPin = resetPin;
+  nResetPin = resetPin;
   reset();
 
   _slaveSelectPin = SS;
@@ -311,11 +322,9 @@ RCSwitch::RCSwitch(int resetPin) {
 
   initialize();
 
-  #if not defined( RCSwitchDisableReceiving )
-  this->nReceiverInterruptPin = -1;
-  this->setReceiveTolerance(60);
+  nReceiverInterruptPin = -1;
+  setReceiveTolerance(60);
   RCSwitch::nReceivedValue = 0;
-  #endif
 }
 
 void RCSwitch::reset(void)
@@ -332,8 +341,8 @@ void RCSwitch::reset(void)
 /**
   * Sets the protocol to send.
   */
-void RCSwitch::setProtocol(Protocol protocol) {
-  this->protocol = protocol;
+void RCSwitch::setProtocol(Protocol newProtocol) {
+ _protocol = newProtocol;
 }
 
 /**
@@ -342,11 +351,12 @@ void RCSwitch::setProtocol(Protocol protocol) {
 void RCSwitch::setProtocol(int nProtocol) {
   if (nProtocol < 1 || nProtocol > numProto) {
     nProtocol = 1;  // TODO: trigger an error, e.g. "bad protocol" ???
+    Serial.println("Bad protocol");
   }
 #if defined(ESP8266) || defined(ESP32)
-  this->protocol = proto[nProtocol-1];
+  _protocol = proto[nProtocol-1];
 #else
-  memcpy_P(&this->protocol, &proto[nProtocol-1], sizeof(Protocol));
+  memcpy_P(protocol, &proto[nProtocol-1], sizeof(Protocol));
 #endif
 }
 
@@ -355,7 +365,7 @@ void RCSwitch::setProtocol(int nProtocol) {
   */
 void RCSwitch::setProtocol(int nProtocol, int nPulseLength) {
   setProtocol(nProtocol);
-  this->setPulseLength(nPulseLength);
+  setPulseLength(nPulseLength);
 }
 
 
@@ -363,45 +373,21 @@ void RCSwitch::setProtocol(int nProtocol, int nPulseLength) {
   * Sets pulse length in microseconds
   */
 void RCSwitch::setPulseLength(int nPulseLength) {
-  this->protocol.pulseLength = nPulseLength;
+  _protocol.pulseLength = nPulseLength;
 }
 
 /**
  * Sets Repeat Transmits
  */
-void RCSwitch::setRepeatTransmit(int nRepeatTransmit) {
-  this->nRepeatTransmit = nRepeatTransmit;
+void RCSwitch::setRepeatTransmit(int repeatTransmit) {
+  nRepeatTransmit = repeatTransmit;
 }
 
 /**
  * Set Receiving Tolerance
  */
-#if not defined( RCSwitchDisableReceiving )
 void RCSwitch::setReceiveTolerance(int nPercent) {
   RCSwitch::nReceiveTolerance = nPercent;
-}
-#endif
-  
-
-/**
- * Enable transmissions
- *
- * @param nTransmitterPin    Arduino Pin to which the sender is connected to
- */
-void RCSwitch::enableTransmit(int nTransmitterPin) {
-  this->nTransmitterPin = nTransmitterPin;
-  pinMode(this->nTransmitterPin, OUTPUT);
-  reset();
-  initialize();
-  setMode(RF69OOK_MODE_TX);
-}
-
-/**
-  * Disable transmissions
-  */
-void RCSwitch::disableTransmit() {
-  this->nTransmitterPin = -1;
-  setMode(RF69OOK_MODE_STANDBY);
 }
 
 /**
@@ -411,7 +397,7 @@ void RCSwitch::disableTransmit() {
  * @param nDevice       Number of the switch itself (1..3)
  */
 void RCSwitch::switchOn(char sGroup, int nDevice) {
-  this->sendTriState( this->getCodeWordD(sGroup, nDevice, true) );
+  sendTriState( getCodeWordD(sGroup, nDevice, true) );
 }
 
 /**
@@ -421,7 +407,7 @@ void RCSwitch::switchOn(char sGroup, int nDevice) {
  * @param nDevice       Number of the switch itself (1..3)
  */
 void RCSwitch::switchOff(char sGroup, int nDevice) {
-  this->sendTriState( this->getCodeWordD(sGroup, nDevice, false) );
+  sendTriState( getCodeWordD(sGroup, nDevice, false) );
 }
 
 /**
@@ -432,7 +418,7 @@ void RCSwitch::switchOff(char sGroup, int nDevice) {
  * @param nDevice  Number of device (1..4)
   */
 void RCSwitch::switchOn(char sFamily, int nGroup, int nDevice) {
-  this->sendTriState( this->getCodeWordC(sFamily, nGroup, nDevice, true) );
+  sendTriState( getCodeWordC(sFamily, nGroup, nDevice, true) );
 }
 
 /**
@@ -443,7 +429,7 @@ void RCSwitch::switchOn(char sFamily, int nGroup, int nDevice) {
  * @param nDevice  Number of device (1..4)
  */
 void RCSwitch::switchOff(char sFamily, int nGroup, int nDevice) {
-  this->sendTriState( this->getCodeWordC(sFamily, nGroup, nDevice, false) );
+  sendTriState( getCodeWordC(sFamily, nGroup, nDevice, false) );
 }
 
 /**
@@ -453,7 +439,7 @@ void RCSwitch::switchOff(char sFamily, int nGroup, int nDevice) {
  * @param nChannelCode  Number of the switch itself (1..4)
  */
 void RCSwitch::switchOn(int nAddressCode, int nChannelCode) {
-  this->sendTriState( this->getCodeWordB(nAddressCode, nChannelCode, true) );
+  sendTriState( getCodeWordB(nAddressCode, nChannelCode, true) );
 }
 
 /**
@@ -463,7 +449,7 @@ void RCSwitch::switchOn(int nAddressCode, int nChannelCode) {
  * @param nChannelCode  Number of the switch itself (1..4)
  */
 void RCSwitch::switchOff(int nAddressCode, int nChannelCode) {
-  this->sendTriState( this->getCodeWordB(nAddressCode, nChannelCode, false) );
+  sendTriState( getCodeWordB(nAddressCode, nChannelCode, false) );
 }
 
 /**
@@ -475,7 +461,7 @@ void RCSwitch::switchOff(int nAddressCode, int nChannelCode) {
  */
 void RCSwitch::switchOn(const char* sGroup, int nChannel) {
   const char* code[6] = { "00000", "10000", "01000", "00100", "00010", "00001" };
-  this->switchOn(sGroup, code[nChannel]);
+  switchOn(sGroup, code[nChannel]);
 }
 
 /**
@@ -487,7 +473,7 @@ void RCSwitch::switchOn(const char* sGroup, int nChannel) {
  */
 void RCSwitch::switchOff(const char* sGroup, int nChannel) {
   const char* code[6] = { "00000", "10000", "01000", "00100", "00010", "00001" };
-  this->switchOff(sGroup, code[nChannel]);
+  switchOff(sGroup, code[nChannel]);
 }
 
 /**
@@ -497,7 +483,7 @@ void RCSwitch::switchOff(const char* sGroup, int nChannel) {
  * @param sDevice       Code of the switch device (refers to DIP switches 6..10 (A..E) where "1" = on and "0" = off, if all DIP switches are on it's "11111")
  */
 void RCSwitch::switchOn(const char* sGroup, const char* sDevice) {
-  this->sendTriState( this->getCodeWordA(sGroup, sDevice, true) );
+  sendTriState( getCodeWordA(sGroup, sDevice, true) );
 }
 
 /**
@@ -507,7 +493,7 @@ void RCSwitch::switchOn(const char* sGroup, const char* sDevice) {
  * @param sDevice       Code of the switch device (refers to DIP switches 6..10 (A..E) where "1" = on and "0" = off, if all DIP switches are on it's "11111")
  */
 void RCSwitch::switchOff(const char* sGroup, const char* sDevice) {
-  this->sendTriState( this->getCodeWordA(sGroup, sDevice, false) );
+  sendTriState( getCodeWordA(sGroup, sDevice, false) );
 }
 
 
@@ -683,7 +669,7 @@ void RCSwitch::sendTriState(const char* sCodeWord) {
     }
     length += 2;
   }
-  this->send(code, length);
+  send(code, length);
 }
 
 /**
@@ -699,7 +685,7 @@ void RCSwitch::send(const char* sCodeWord) {
       code |= 1L;
     length++;
   }
-  this->send(code, length);
+  send(code, length);
 }
 
 /**
@@ -708,55 +694,56 @@ void RCSwitch::send(const char* sCodeWord) {
  * then the bit at position length-2, and so on, till finally the bit at position 0.
  */
 void RCSwitch::send(unsigned long code, unsigned int length) {
-  // if (this->nTransmitterPin == -1)
-  //   return;
+  if (nTransmitterPin == -1){
+    Serial.println("Not enabled for transmit");
+    return;
+  }
 
-#if not defined( RCSwitchDisableReceiving )
   // make sure the receiver is disabled while we transmit
   int nReceiverInterrupt_backup = nReceiverInterruptPin;
   if (nReceiverInterrupt_backup != -1) {
-    this->disableReceive();
+    disableReceive();
   }
-#endif
-  nTransmitterPin = 4;
   pinMode(nTransmitterPin, OUTPUT);
   setMode(RF69OOK_MODE_TX);
-
   for (int nRepeat = 0; nRepeat < nRepeatTransmit; nRepeat++) {
     for (int i = length-1; i >= 0; i--) {
       if (code & (1L << i))
-        this->transmit(protocol.one);
+        transmit(_protocol.one);
       else
-        this->transmit(protocol.zero);
+        transmit(_protocol.zero);
     }
-    this->transmit(protocol.syncFactor);
+    transmit(_protocol.syncFactor);
   }
 
   // Disable transmit after sending (i.e., for inverted protocols)
-  digitalWrite(this->nTransmitterPin, LOW);
+  digitalWrite(nTransmitterPin, LOW);
 
-#if not defined( RCSwitchDisableReceiving )
   // enable receiver again if we just disabled it
   if (nReceiverInterrupt_backup != -1) {
-    this->enableReceive(nReceiverInterrupt_backup);
+    enableReceive(nReceiverInterrupt_backup);
   }
-#endif
-  // pinMode(nReceiverInterruptPin, INPUT);
-  // setMode(RF69OOK_MODE_RX);
-
 }
 
 /**
  * Transmit a single high-low pulse.
  */
 void RCSwitch::transmit(HighLow pulses) {
-  uint8_t firstLogicLevel = (this->protocol.invertedSignal) ? LOW : HIGH;
-  uint8_t secondLogicLevel = (this->protocol.invertedSignal) ? HIGH : LOW;
+  uint8_t firstLogicLevel = (_protocol.invertedSignal) ? LOW : HIGH;
+  uint8_t secondLogicLevel = (_protocol.invertedSignal) ? HIGH : LOW;
   
-  digitalWrite(this->nTransmitterPin, firstLogicLevel);
-  delayMicroseconds( this->protocol.pulseLength * pulses.high);
-  digitalWrite(this->nTransmitterPin, secondLogicLevel);
-  delayMicroseconds( this->protocol.pulseLength * pulses.low);
+  digitalWrite(nTransmitterPin, firstLogicLevel);
+  delayMicroseconds(_protocol.pulseLength * pulses.high);
+  digitalWrite(nTransmitterPin, secondLogicLevel);
+  delayMicroseconds(_protocol.pulseLength * pulses.low);
+}
+
+/**
+ * Enable for both receiving and transmit
+ */
+void RCSwitch::enableRadio(int interruptPin){
+  nTransmitterPin = interruptPin;
+  enableReceive(interruptPin);
 }
 
 
@@ -764,23 +751,22 @@ void RCSwitch::transmit(HighLow pulses) {
 /**
  * Enable receiving data
  */
-void RCSwitch::enableReceive(int interrupt) {
-  this->nReceiverInterruptPin = interrupt;
-  //this->nTransmitterPin = interrupt; // we can transmit on the same pin
-  this->enableReceive();
+void RCSwitch::enableReceive(int interruptPin) {
+  nReceiverInterruptPin = interruptPin;
+  enableReceive();
 }
 
 void RCSwitch::enableReceive() {
-  if (this->nReceiverInterruptPin != -1) {
+  if (nReceiverInterruptPin != -1) {
     RCSwitch::nReceivedValue = 0;
     RCSwitch::nReceivedBitlength = 0;
+    pinMode(nReceiverInterruptPin, INPUT);
 #if defined(RaspberryPi) // Raspberry Pi
-    wiringPiISR(this->nReceiverInterruptPin, INT_EDGE_BOTH, &handleInterrupt);
+    wiringPiISR(nReceiverInterruptPin, INT_EDGE_BOTH, &handleInterrupt);
 #elif defined(ESP32) // ESP32
-    pinMode(this->nReceiverInterruptPin, INPUT);
-    attachInterrupt(digitalPinToInterrupt(this->nReceiverInterruptPin), handleInterrupt, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(nReceiverInterruptPin), handleInterrupt, CHANGE);
 #else // Arduino
-    attachInterrupt(this->nReceiverInterruptPin, handleInterrupt, CHANGE);
+    attachInterrupt(nReceiverInterruptPin, handleInterrupt, CHANGE);
 #endif
     reset();
     initialize();
@@ -793,10 +779,10 @@ void RCSwitch::enableReceive() {
  */
 void RCSwitch::disableReceive() {
 #if not defined(RaspberryPi) // Arduino
-  detachInterrupt(digitalPinToInterrupt(this->nReceiverInterruptPin));
-  pinMode(this->nReceiverInterruptPin, OUTPUT);
+  detachInterrupt(digitalPinToInterrupt(nReceiverInterruptPin));
+  pinMode(nReceiverInterruptPin, OUTPUT);
 #endif // For Raspberry Pi (wiringPi) you can't unregister the ISR
-  this->nReceiverInterruptPin = -1;
+  nReceiverInterruptPin = -1;
   RCSwitch::nReceivedValue = 0;
   RCSwitch::nReceivedBitlength = 0;
   setMode(RF69OOK_MODE_STANDBY);
