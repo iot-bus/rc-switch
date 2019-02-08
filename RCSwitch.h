@@ -58,11 +58,14 @@
 // Ignore glitches - ignore pulses less than this length in microseconds
 #define RCSWITCH_MIN_DURATION 145
 
+#define RCSWITCH_RESETPIN 17
+#define RCSWITCH_DATAPIN 4
+
 class RCSwitch {
 
   public:
     //RCSwitch();
-    RCSwitch(int resetPin = 17);
+    RCSwitch(int resetPin = RCSWITCH_RESETPIN);
     
     // RFM69
 
@@ -103,7 +106,7 @@ class RCSwitch {
     void send(unsigned long code, unsigned int length);
     void send(const char* sCodeWord);
 
-    void enableRadio(int interruptPin = 4);
+    void enableRadio(int interruptPin = RCSWITCH_DATAPIN);
     void enableReceive(int interruptPin);
     void enableReceive();
     void disableReceive();

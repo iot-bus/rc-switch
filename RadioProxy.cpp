@@ -27,8 +27,10 @@
 
 int RadioProxy::proxyCount = 0;
 
-RCSwitch RadioProxy::theRadio;
+RCSwitch RadioProxy::theRadio(RADIOPROXY_RESETPIN);
 bool RadioProxy::radioEnabled = 0;
+bool RadioProxy::_verbose = true;
+
 
 /**
   * Constructor
@@ -64,7 +66,8 @@ RadioProxy::~RadioProxy(){
 /**
   * Enable the radio through RCSwitch
   */
-void RadioProxy::enableRadio(int radioPin){
+void RadioProxy::enableRadio(int radioPin, bool verbose){
+    _verbose = verbose;
     if(!radioEnabled){
         // enable the radio
         theRadio.enableRadio(radioPin);
@@ -199,15 +202,16 @@ int RadioProxy::mapRadioStatus(){
   int onOff = -1;
   if (theRadio.available()) {
     int32_t code =  theRadio.getReceivedValue();
-    Serial.print("Received code: ");
-    Serial.print(code);
-    Serial.print(", code length: ");
-    Serial.print(theRadio.getReceivedBitlength());
-    Serial.print(", pulse length: ");
-    Serial.print(theRadio.getReceivedDelay());
-    Serial.print(", protocol: ");
-    Serial.println(theRadio.getReceivedProtocol()); 
-    
+    if (_verbose){
+      Serial.print("Received code: ");
+      Serial.print(code);
+      Serial.print(", code length: ");
+      Serial.print(theRadio.getReceivedBitlength());
+      Serial.print(", pulse length: ");
+      Serial.print(theRadio.getReceivedDelay());
+      Serial.print(", protocol: ");
+      Serial.println(theRadio.getReceivedProtocol()); 
+    }
     RadioProxy* proxy = RadioProxy::getProxyForCode(code);
     if (proxy != nullptr){
       if (proxy->isOnCode(code)){
@@ -260,16 +264,18 @@ void RadioProxy::mapPropertyStatus(ThingProperty* property){
   * Sends a code to a proxy radio device
   */
 void RadioProxy::sendCodeToProxy(RadioProxy* proxy, uint32_t code){
-  Serial.print("Sending code: ");
-  Serial.print(code);
-  Serial.print(", code length: "); 
-  Serial.print(proxy->codeLength());
-  Serial.print(", pulse length: ");    
-  Serial.print(proxy->pulseLength());
-  Serial.print(", protocol: ");
-  Serial.print(proxy->protocol()); 
-  Serial.print(", repetitions: "); 
-  Serial.println(proxy->repetitions()); 
+  if (_verbose){
+    Serial.print("Sending code: ");
+    Serial.print(code);
+    Serial.print(", code length: "); 
+    Serial.print(proxy->codeLength());
+    Serial.print(", pulse length: ");    
+    Serial.print(proxy->pulseLength());
+    Serial.print(", protocol: ");
+    Serial.print(proxy->protocol()); 
+    Serial.print(", repetitions: "); 
+    Serial.println(proxy->repetitions()); 
+  }
 
   theRadio.setProtocol(proxy->protocol()); // needs to be first - rest of data is in protocol structure
   theRadio.setPulseLength(proxy->pulseLength()); 

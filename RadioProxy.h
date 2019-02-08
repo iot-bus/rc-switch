@@ -29,6 +29,7 @@
 
 // Radio transmit and receive pin (RFM69 DIO2)
 #define RADIOPROXY_RADIOPIN 4
+#define RADIOPROXY_RESETPIN 17
 
 enum ProxyType { PROXY_INPUT, PROXY_OUTPUT };
 
@@ -58,7 +59,7 @@ class RadioProxy{
     static void mapPropertyStatus();
     static void mapPropertyStatus(ThingProperty* property);
     static int mapRadioStatus();
-    static void enableRadio(int pin = RADIOPROXY_RADIOPIN);
+    static void enableRadio(int pin = RADIOPROXY_RADIOPIN, bool verbose = true);
 
     static void sendCodeToProxy(RadioProxy* proxy, uint32_t code);
   
@@ -72,6 +73,8 @@ class RadioProxy{
     int _protocol;
     int _repetitions;
     bool _status;
+  
+
     static int proxyCount; 
 
     static RCSwitch theRadio;
@@ -82,5 +85,8 @@ class RadioProxy{
     static RadioProxy* getProxyForCode(uint32_t code);
     static RadioProxy* getProxyForProperty(ThingProperty* property);
     static std::vector<RadioProxy*>* getProxies();
+
+    static bool _verbose;
+
  
 };
