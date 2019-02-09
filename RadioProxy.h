@@ -31,12 +31,15 @@
 #define RADIOPROXY_RADIOPIN 4
 #define RADIOPROXY_RESETPIN 17
 
+// Same code received within this time is ignored as a bounce
+#define RADIOPROXY_DEBOUNCE 300 // debounce time in ms
+
 enum ProxyType { PROXY_INPUT, PROXY_OUTPUT };
 
 class RadioProxy{
  
    public:
-    RadioProxy(ProxyType proxyType, ThingProperty* property, uint32_t onCode, uint32_t offCode, 
+    RadioProxy(ProxyType proxyType, ThingProperty* property, uint32_t onCode, uint32_t offCode = 0, 
               int codeLength = 24, int pulseLength = 186, int protocol = 1, int repetitions = 10);
     ~RadioProxy();
     ProxyType proxyType();
@@ -45,6 +48,7 @@ class RadioProxy{
     uint32_t onCode();
     bool isOnCode(uint32_t code);
     bool isOffCode(uint32_t code);
+    bool isFlipFlopCode(uint32_t code);
 
     int pulseLength();
     int protocol();
@@ -54,7 +58,7 @@ class RadioProxy{
     void setProtocol(int protocol);
     void setCodeLength(int codeLength);
     void setRepetitions(int repetitions);
-    bool status();
+    bool state();
   
     static void mapPropertyStatus();
     static void mapPropertyStatus(ThingProperty* property);
@@ -72,7 +76,7 @@ class RadioProxy{
     int _codeLength;
     int _protocol;
     int _repetitions;
-    bool _status;
+    bool _state;
   
 
     static int proxyCount; 
@@ -80,7 +84,7 @@ class RadioProxy{
     static RCSwitch theRadio;
     static bool radioEnabled;
 
-    void setStatus(bool status);
+    void setState(bool state);
     void removeProxy(RadioProxy* proxy);
     static RadioProxy* getProxyForCode(uint32_t code);
     static RadioProxy* getProxyForProperty(ThingProperty* property);

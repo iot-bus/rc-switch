@@ -49,7 +49,7 @@ bool RadioProxy::_verbose = true;
     _codeLength = codeLength;
     _protocol = protocol;
     _repetitions = repetitions;
-    _status = false;
+    _state = false;
     std::vector<RadioProxy*>* proxies = RadioProxy::getProxies();
     proxies->push_back(this);
     proxyCount++;
@@ -101,6 +101,13 @@ uint32_t RadioProxy::onCode(){
   */
 bool RadioProxy::isOnCode(uint32_t code){
     return (code == _onCode);
+}
+
+/**
+  * Returns true if code is a flip-flop
+  */
+bool RadioProxy::isFlipFlopCode(uint32_t code){
+    return (code != 0 && _offCode == 0);
 }
 
 /**
@@ -176,15 +183,15 @@ void RadioProxy::setRepetitions(int repetitions){
 /**
   * Returns the current status
   */
-bool RadioProxy::status(){
-    return _status;
+bool RadioProxy::state(){
+    return _state;
 }
 
 /**
   * Sets the status
   */
-void RadioProxy::setStatus(bool status){
-    _status = status;
+void RadioProxy::setState(bool state){
+    _state = state;
 }
 
 /**
@@ -198,10 +205,23 @@ void RadioProxy::removeProxy(RadioProxy* proxy){
   * Performs the mapping of a radio code to a WebThing property
   */
 int RadioProxy::mapRadioStatus(){
-  ThingPropertyValue value;  
+  static uint32_t lastTime = 0;
+  static uint32_t lastCode = 0;
+  
   int onOff = -1;
+
   if (theRadio.available()) {
+    uint32_t time = millis();
+    uint32_t delta = time-lastTime;
+    lastTime = time;
     int32_t code =  theRadio.getReceivedValue();
+    if (code == lastCode && delta < RADIOPROXY_DEBOUNCE){
+      // debounce - ignore same code within debounce time
+      theRadio.resetAvailable();
+      return -1;
+    }
+    lastCode = code;
+    ThingPropertyValue value;  
     if (_verbose){
       Serial.print("Received code: ");
       Serial.print(code);
@@ -210,19 +230,43 @@ int RadioProxy::mapRadioStatus(){
       Serial.print(", pulse length: ");
       Serial.print(theRadio.getReceivedDelay());
       Serial.print(", protocol: ");
-      Serial.println(theRadio.getReceivedProtocol()); 
+      Serial.print(theRadio.getReceivedProtocol()); 
     }
     RadioProxy* proxy = RadioProxy::getProxyForCode(code);
     if (proxy != nullptr){
-      if (proxy->isOnCode(code)){
-        value.boolean = 1;
+      if (proxy->isFlipFlopCode(code)){
+        // same code is used to turn on and off
+        if (_verbose){
+          Serial.print(", flip flop ");
+        }        
+        proxy->_state = !proxy->_state;
+      }
+      else if (proxy->isOnCode(code)){
+        proxy->_state = 1;
+        if (_verbose){
+          Serial.print(", on code ");
+        }
       }
       else if (proxy->isOffCode(code)){
-        value.boolean = 0;
+        proxy->_state = 0;
+        if (_verbose){
+          Serial.print(", off code ");
+        }
       }
-      onOff = value.boolean;
+      onOff = proxy->_state;
+      value.boolean = proxy->_state;
       // has to be one or the other otherwise proxy would be null
       proxy->property()->setValue(value);
+      if (_verbose){
+        Serial.println("proxy found");
+        Serial.print("New state: ");
+        Serial.println(proxy->state());
+      }
+    }
+    else{
+      if (_verbose){
+        Serial.println(", no proxy found");
+      }
     }
     theRadio.resetAvailable();
   }
@@ -249,13 +293,13 @@ void RadioProxy::mapPropertyStatus(ThingProperty* property){
   ThingPropertyValue value = property->getValue();
   RadioProxy* proxy = RadioProxy::getProxyForProperty(property);
   if (proxy != nullptr){ 
-    if(value.boolean == 1 && proxy->status() != true){  
+    if(value.boolean == 1 && proxy->state() != true){  
       RadioProxy::sendCodeToProxy(proxy, proxy->onCode());
-      proxy->setStatus(true);
+      proxy->setState(true);
     }
-    else if(value.boolean == 0 && proxy->status() != false){
+    else if(value.boolean == 0 && proxy->state() != false){
       RadioProxy::sendCodeToProxy(proxy, proxy->offCode());
-      proxy->setStatus(false);
+      proxy->setState(false);
     }
   }
 }
