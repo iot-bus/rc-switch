@@ -99,9 +99,9 @@ bool RCSwitch::initialize()
     /* 0x1D */ { REG_OOKFIX, /* 6 */ 30 }, // Fixed threshold value (in dB) in the OOK demodulator
     /* 0x29 */ { REG_RSSITHRESH, /*140*/ 140}, // RSSI threshold in dBm = -(REG_RSSITHRESH / 2)
     /* 0x6F */ { REG_TESTDAGC, RF_DAGC_IMPROVED_LOWBETA0 }, // run DAGC continuously in RX mode, recommended default for AfcLowBetaOn=0
-    ///* */    { REG_TESTLNA, SENSITIVITY_BOOST_HIGH}, // turn on sensitivity boost
-    ///* */    { REG_LNA, RF_LNA_GAINSELECT_MAX}, // MAX GAIN
-    {255, 0}
+    /* */    { REG_TESTLNA, SENSITIVITY_BOOST_HIGH}, // turn on sensitivity boost
+    /* */    { REG_LNA, RF_LNA_GAINSELECT_MAX}, // MAX GAIN
+    // {255, 0}
   };
 
   pinMode(_slaveSelectPin, OUTPUT);

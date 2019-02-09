@@ -32,7 +32,7 @@
 #define RADIOPROXY_RESETPIN 17
 
 // Same code received within this time is ignored as a bounce
-#define RADIOPROXY_DEBOUNCE 300 // debounce time in ms
+#define RADIOPROXY_DEBOUNCE 200 // debounce time in ms
 
 enum ProxyType { PROXY_INPUT, PROXY_OUTPUT };
 

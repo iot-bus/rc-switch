@@ -258,8 +258,10 @@ int RadioProxy::mapRadioStatus(){
       // has to be one or the other otherwise proxy would be null
       proxy->property()->setValue(value);
       if (_verbose){
-        Serial.println("proxy found");
-        Serial.print("New state: ");
+        Serial.print("proxy found: ");
+        ThingProperty* property = proxy->property();
+        Serial.print(property->description);
+        Serial.print(", new state: ");
         Serial.println(proxy->state());
       }
     }
@@ -318,7 +320,19 @@ void RadioProxy::sendCodeToProxy(RadioProxy* proxy, uint32_t code){
     Serial.print(", protocol: ");
     Serial.print(proxy->protocol()); 
     Serial.print(", repetitions: "); 
-    Serial.println(proxy->repetitions()); 
+    Serial.print(proxy->repetitions());
+    Serial.print(", property: "); 
+    ThingProperty* property = proxy->property();
+    Serial.print(property->description);
+    if (proxy->isFlipFlopCode(code)){
+      Serial.print(", flip flop code");
+    } 
+    else if (proxy->isOnCode(code)){
+      Serial.println(", on code");
+    }
+    else if (proxy->isOffCode(code)){
+      Serial.println(", off code");
+    }  
   }
 
   theRadio.setProtocol(proxy->protocol()); // needs to be first - rest of data is in protocol structure
