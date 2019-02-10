@@ -13,7 +13,7 @@ The cheap devices widely available at 433Mhz typically use a code for on and a c
 a bit is represented by a combination of high/low spaces and vary in terms of pulse duration. RCSwitch handles the low level sending 
 and receipt of these codes as well as decoding the protocol used.
 
-RadioProxy is a new class added to RcSwitch which statically maps 433Mhz codes to Mozilla WebThings properties both for sending and receiving. 
+RadioProxy is a new class added to RCSwitch which statically maps 433Mhz codes to Mozilla WebThings properties both for sending and receiving. 
 
 Let's see hw to define a 433Mhz device for use with WebThings. Here is a simple WebThing controller with two properties:
 
@@ -28,6 +28,12 @@ This is how you add the proxies or the devices that map 433Mhz codes to properti
 
 These declarations indicate that radio input of these on codes and off codes are to be mapped to control1 
 and control2 property respectively.
+
+Note that is=t is possible to map "flip-flop" type devices that have a single code rather than separate on and off codes:
+
+    RadioProxy proxy1(PROXY_INPUT, &buttonProperty1, 15864961);
+
+RadioProxy flips the state each time it gets this type of code.  
 
 Output devices are declared in a similar way but require more information. This is a power outlet with typical WebThings declaration.
 

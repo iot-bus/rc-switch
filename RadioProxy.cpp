@@ -295,6 +295,11 @@ void RadioProxy::mapPropertyStatus(ThingProperty* property){
   ThingPropertyValue value = property->getValue();
   RadioProxy* proxy = RadioProxy::getProxyForProperty(property);
   if (proxy != nullptr){ 
+    if (proxy->isFlipFlopCode(proxy->onCode())){
+        // same code is used to turn on and off        
+        RadioProxy::sendCodeToProxy(proxy, proxy->onCode());
+        proxy->_state = !proxy->_state;
+      }
     if(value.boolean == 1 && proxy->state() != true){  
       RadioProxy::sendCodeToProxy(proxy, proxy->onCode());
       proxy->setState(true);
