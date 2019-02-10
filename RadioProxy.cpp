@@ -66,11 +66,11 @@ RadioProxy::~RadioProxy(){
 /**
   * Enable the radio through RCSwitch
   */
-void RadioProxy::enableRadio(int radioPin, bool verbose){
+void RadioProxy::begin(bool verbose){
     _verbose = verbose;
     if(!radioEnabled){
         // enable the radio
-        theRadio.enableRadio(radioPin);
+        theRadio.enableRadio(RADIOPROXY_DATAPIN);
         radioEnabled = true;
     }
 }
@@ -199,6 +199,14 @@ void RadioProxy::setState(bool state){
   */
 void RadioProxy::removeProxy(RadioProxy* proxy){
     Serial.println("proxy deleted");
+}
+
+void RadioProxy::update(){
+  // map a received code to relevant property
+  mapRadioStatus();
+  // map all properties to radio status 
+  mapPropertyStatus();
+
 }
 
 /**

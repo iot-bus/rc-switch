@@ -28,7 +28,7 @@
 #include <RCSwitch.h>
 
 // Radio transmit and receive pin (RFM69 DIO2)
-#define RADIOPROXY_RADIOPIN 4
+#define RADIOPROXY_DATAPIN 4
 #define RADIOPROXY_RESETPIN 17
 
 // Same code received within this time is ignored as a bounce
@@ -60,11 +60,8 @@ class RadioProxy{
     void setRepetitions(int repetitions);
     bool state();
   
-    static void mapPropertyStatus();
-    static void mapPropertyStatus(ThingProperty* property);
-    static int mapRadioStatus();
-    static void enableRadio(int pin = RADIOPROXY_RADIOPIN, bool verbose = true);
-
+    static void update();
+    static void begin(bool verbose = true);
     static void sendCodeToProxy(RadioProxy* proxy, uint32_t code);
   
   private:
@@ -77,8 +74,8 @@ class RadioProxy{
     int _protocol;
     int _repetitions;
     bool _state;
-  
-
+    
+    static bool _verbose;
     static int proxyCount; 
 
     static RCSwitch theRadio;
@@ -86,11 +83,14 @@ class RadioProxy{
 
     void setState(bool state);
     void removeProxy(RadioProxy* proxy);
+
+    static void mapPropertyStatus();
+    static void mapPropertyStatus(ThingProperty* property);
+    static int mapRadioStatus();
+ 
     static RadioProxy* getProxyForCode(uint32_t code);
     static RadioProxy* getProxyForProperty(ThingProperty* property);
     static std::vector<RadioProxy*>* getProxies();
-
-    static bool _verbose;
 
  
 };
