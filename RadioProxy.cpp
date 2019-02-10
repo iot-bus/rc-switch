@@ -295,12 +295,12 @@ void RadioProxy::mapPropertyStatus(ThingProperty* property){
   ThingPropertyValue value = property->getValue();
   RadioProxy* proxy = RadioProxy::getProxyForProperty(property);
   if (proxy != nullptr){ 
-    if (proxy->isFlipFlopCode(proxy->onCode())){
-        // same code is used to turn on and off        
+    if ((proxy->isFlipFlopCode(proxy->onCode())) && (value.boolean != proxy->_state)){
+        // same code is used to turn on and off - only do this if state has changed       
         RadioProxy::sendCodeToProxy(proxy, proxy->onCode());
         proxy->_state = !proxy->_state;
       }
-    if(value.boolean == 1 && proxy->state() != true){  
+    else if(value.boolean == 1 && proxy->state() != true){  
       RadioProxy::sendCodeToProxy(proxy, proxy->onCode());
       proxy->setState(true);
     }
@@ -330,7 +330,7 @@ void RadioProxy::sendCodeToProxy(RadioProxy* proxy, uint32_t code){
     ThingProperty* property = proxy->property();
     Serial.print(property->description);
     if (proxy->isFlipFlopCode(code)){
-      Serial.print(", flip flop code");
+      Serial.println(", flip-flop code");
     } 
     else if (proxy->isOnCode(code)){
       Serial.println(", on code");
