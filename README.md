@@ -53,19 +53,15 @@ So it's quite straightforward to declare the RadioProxies.
 
 To use the 433Mhz radio, you need to turn it on in your setup()
 
-    RadioProxy::enableRadio(4, true); // this says the data transmission pin is pin 4 - current default for IoT-Bus and start in verbose more
+    RadioProxy::begin(true); // start radio in verbose more
 
+The mapping or gateway code is handled by this statement in your loop()
 
-The mapping or gateway code is handled by these two statements in your loop()
-
-    // map a received code to relevant property
-    RadioProxy::mapRadioStatus();
-    // map all properties to radio status 
-    RadioProxy::mapPropertyStatus();
+    RadioProxy::update();
 
 And that's it!
 
-This fork is only designed to run on ESP32, specifically the IoT-Bus 433Mhz board. Use the original library if you need 
+This fork is only designed to run on ESP32, specifically the IoT-Bus 433Mhz board. Use the original RCSwitch library if you need 
 other platform support.
 
 The original rc-switch library information is below:
