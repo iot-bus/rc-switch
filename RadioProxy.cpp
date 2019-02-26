@@ -27,7 +27,7 @@
 
 int RadioProxy::proxyCount = 0;
 
-RCSwitch RadioProxy::theRadio(RADIOPROXY_RESETPIN);
+RCSwitch RadioProxy::theRadio;
 bool RadioProxy::radioEnabled = 0;
 bool RadioProxy::_verbose = true;
 
@@ -70,7 +70,7 @@ void RadioProxy::begin(bool verbose){
     _verbose = verbose;
     if(!radioEnabled){
         // enable the radio
-        theRadio.enableRadio(RADIOPROXY_DATAPIN);
+        theRadio.enableRadio();
         radioEnabled = true;
     }
 }
