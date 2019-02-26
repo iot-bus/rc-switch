@@ -53,14 +53,23 @@
 
 // Number of maximum high/Low changes per packet.
 // We can handle up to (unsigned long) => 32 bit * 2 H/L changes per bit + 2 for sync
-#define RCSWITCH_MAX_CHANGES 67
+// Number of maximum high/Low changes per packet.
+// We can handle up to (unsigned long) => 40 bit * 2 H/L changes per bit + 2 for sync
+#define RCSWITCH_MAX_CHANGES 82
+
+// Pulse width tolerance
+#define RCSWITCH_RECEIVE_TOLERANCE 60
+
+// Gap between packets
+#define RCSWITCH_SEPARATION_LIMIT 4300
 
 // Ignore glitches - ignore pulses less than this length in microseconds
 #define RCSWITCH_MIN_DURATION 145
 
-#define RCSWITCH_RESETPIN 17
-#define RCSWITCH_DATAPIN 4
-
+// IoT-Bus pins used
+#define RCSWITCH_RESETPIN 13 // Was 17
+#define RCSWITCH_DATAPIN 25  // Was 4
+#define RCSWITCH_SS 12       // Was 5
 class RCSwitch {
 
   public:

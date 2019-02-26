@@ -68,11 +68,11 @@ volatile unsigned long RCSwitch::nReceivedValue = 0;
 volatile unsigned int RCSwitch::nReceivedBitlength = 0;
 volatile unsigned int RCSwitch::nReceivedDelay = 0;
 volatile unsigned int RCSwitch::nReceivedProtocol = 0;
-int RCSwitch::nReceiveTolerance = 60;
+int RCSwitch::nReceiveTolerance = RCSWITCH_RECEIVE_TOLERANCE;
 //const unsigned int RCSwitch::nSeparationLimit = 9176;
 //const unsigned int RCSwitch::nSeparationLimit = 397*31;
-const unsigned int RCSwitch::nSeparationLimit = 4300;
-//const unsigned int RCSwitch::nSeparationLimit = 5000;
+const unsigned int RCSwitch::nSeparationLimit = RCSWITCH_SEPARATION_LIMIT;
+//const unsigned int RCSwitch::nSeparationLimit = 4300;
 // separationLimit: minimum microseconds between received codes, closer codes are ignored.
 // according to discussion on issue #14 it might be more suitable to set the separation
 // limit to the same time as the 'low' part of the sync signal for the current protocol.
@@ -88,19 +88,21 @@ bool RCSwitch::initialize()
 {
   const byte CONFIG[][2] =
   {
-    /* 0x01 */ { REG_OPMODE, RF_OPMODE_SEQUENCER_OFF | RF_OPMODE_LISTEN_OFF | RF_OPMODE_STANDBY },
-    /* 0x02 */ { REG_DATAMODUL, RF_DATAMODUL_DATAMODE_CONTINUOUSNOBSYNC | RF_DATAMODUL_MODULATIONTYPE_OOK | RF_DATAMODUL_MODULATIONSHAPING_00 }, // no shaping
-    /* 0x03 */ { REG_BITRATEMSB, 0x03}, // bitrate: 32768 Hz
-    /* 0x04 */ { REG_BITRATELSB, 0xD1},
-    ///* 0x03 */ { REG_BITRATEMSB, 0x1A}, // bitrate: 4800 Hz
-    ///* 0x04 */ { REG_BITRATELSB, 0x0B},
-    /* 0x19 */ { REG_RXBW, RF_RXBW_DCCFREQ_010 | RF_RXBW_MANT_24 | RF_RXBW_EXP_4}, // BW: 10.4 kHz
-    /* 0x1B */ { REG_OOKPEAK, RF_OOKPEAK_THRESHTYPE_PEAK | RF_OOKPEAK_PEAKTHRESHSTEP_000 | RF_OOKPEAK_PEAKTHRESHDEC_000 },
-    /* 0x1D */ { REG_OOKFIX, /* 6 */ 30 }, // Fixed threshold value (in dB) in the OOK demodulator
-    /* 0x29 */ { REG_RSSITHRESH, /*140*/ 140}, // RSSI threshold in dBm = -(REG_RSSITHRESH / 2)
-    /* 0x6F */ { REG_TESTDAGC, RF_DAGC_IMPROVED_LOWBETA0 }, // run DAGC continuously in RX mode, recommended default for AfcLowBetaOn=0
-    /* */    { REG_TESTLNA, SENSITIVITY_BOOST_HIGH}, // turn on sensitivity boost
-    /* */    { REG_LNA, RF_LNA_GAINSELECT_MAX}, // MAX GAIN
+    /* 0x01 */ { REG_OPMODE, RF_OPMODE_SEQUENCER_OFF | RF_OPMODE_LISTEN_OFF | RF_OPMODE_STANDBY }, // Standby, not listening
+    /* 0x02 */ { REG_DATAMODUL, RF_DATAMODUL_DATAMODE_CONTINUOUSNOBSYNC | RF_DATAMODUL_MODULATIONTYPE_OOK | RF_DATAMODUL_MODULATIONSHAPING_00 }, // Continuous without sync, OOK, no shaping
+    /* 0x03 */ { REG_BITRATEMSB, 0x03 },                    // Bitrate: 32768 Hz
+    /* 0x04 */ { REG_BITRATELSB, 0xD1 },                    // 32 MHz / 650
+    /* 0x18 */ { REG_LNA, RF_LNA_ZIN_200  | RF_LNA_GAINSELECT_MAX }, // Max gain 200 ohm impedance (default)
+    /* 0x19 */ { REG_RXBW, RF_RXBW_DCCFREQ_010 },           // RxBw DCC=4%, Man=00b Exp = 0 =>BWOOK=250.0kHz
+    /* 0x1B */ { REG_OOKPEAK, RF_OOKPEAK_THRESHTYPE_PEAK | RF_OOKPEAK_PEAKTHRESHSTEP_000 | RF_OOKPEAK_PEAKTHRESHDEC_011 },  // OOK peak, 0.5dB once/8 chips (slowest) 
+    /* 0x1C */ { REG_OOKAVG, RF_OOKAVG_AVERAGETHRESHFILT_10 }, // OOK avg thresh /4pi
+    /* 0x1D */ { REG_OOKFIX, 0x38 },                        // Fixed threshold value (in dB) in the OOK demodulator
+    /* 0x1E */ { REG_AFCFEI, RF_AFCFEI_AFCAUTO_OFF },       // No auto AFC 
+    /* 0x2E */ { REG_SYNCCONFIG, RF_SYNC_OFF },             // SyncConfig = sync off
+    /* 0x29 */ { REG_RSSITHRESH, 0xFF},                     // RSSI threshold in dBm = -(REG_RSSITHRESH / 2), lowest possible
+    /* 0x58 */ { REG_TESTLNA, SENSITIVITY_BOOST_HIGH },     // Turn on sensitivity boost
+    /* 0x6F */ { REG_TESTDAGC, RF_DAGC_IMPROVED_LOWBETA0 }, // Run DAGC continuously in RX mode, recommended default for AfcLowBetaOn=0
+    /* 0x71 */ { REG_TESTAFC, 0x00 },                       // if AfcLowBetaOn=1, frequency * 488 Hz
     // {255, 0}
   };
 
@@ -112,13 +114,12 @@ bool RCSwitch::initialize()
 
   setHighPower(_isRFM69HW); // called regardless if it's a RFM69W or RFM69HW
   setMode(RF69OOK_MODE_STANDBY);
-    while ((readReg(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // Wait for ModeReady
+  while ((readReg(REG_IRQFLAGS1) & RF_IRQFLAGS1_MODEREADY) == 0x00); // Wait for ModeReady
 
-  //setBandwidth(OOK_BW_10_4);
-  setRSSIThreshold(140);
-  setFixedThreshold(47); // 30
-  //  radio.setSensitivityBoost(SENSITIVITY_BOOST_HIGH);
-  setFrequencyMHz(433.9);
+  writeReg(REG_AFCFEI, (1 << 1)); // clear AFC
+  setRSSIThreshold(255); // smallest signal possible to start receiving
+  setFixedThreshold(56); // 56dB noise floor
+  setFrequencyMHz(433.92);
   setMode(RF69OOK_MODE_RX);  
 
   selfPointer = this;
@@ -278,7 +279,7 @@ RCSwitch::RCSwitch(int resetPin) {
   nResetPin = resetPin;
   reset();
 
-  _slaveSelectPin = SS;
+  _slaveSelectPin = RCSWITCH_SS;
   _mode = RF69OOK_MODE_STANDBY;
   _powerLevel = 31;
   _isRFM69HW = false;
