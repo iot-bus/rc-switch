@@ -269,7 +269,7 @@ int8_t RCSwitch::readRSSI(bool forceTrigger) {
 
 // end of RFM69
 
-RCSwitch::RCSwitch(int resetPin) {
+RCSwitch::RCSwitch(int ssPin, int resetPin) {
 
   nTransmitterPin = -1;
   setRepeatTransmit(10);
@@ -279,7 +279,7 @@ RCSwitch::RCSwitch(int resetPin) {
   nResetPin = resetPin;
   reset();
 
-  _slaveSelectPin = RCSWITCH_SS;
+  _slaveSelectPin = ssPin;
   _mode = RF69OOK_MODE_STANDBY;
   _powerLevel = 31;
   _isRFM69HW = false;

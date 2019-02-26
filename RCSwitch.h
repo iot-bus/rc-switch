@@ -74,7 +74,7 @@ class RCSwitch {
 
   public:
     //RCSwitch();
-    RCSwitch(int resetPin = RCSWITCH_RESETPIN);
+    RCSwitch(int ssPin = RCSWITCH_SS, int resetPin = RCSWITCH_RESETPIN);
     
     // RFM69
 
