@@ -28,8 +28,8 @@
 #include <RCSwitch.h>
 
 // Radio transmit and receive pin (RFM69 DIO2)
-#define RADIOPROXY_DATAPIN 4
-#define RADIOPROXY_RESETPIN 17
+#define RADIOPROXY_DATAPIN 25
+#define RADIOPROXY_RESETPIN 13
 
 // Same code received within this time is ignored as a bounce
 #define RADIOPROXY_DEBOUNCE 200 // debounce time in ms
